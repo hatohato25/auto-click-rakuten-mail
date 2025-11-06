@@ -35,7 +35,7 @@ npm install
 # あなたのGmailアドレス
 GMAIL_EMAIL=your-email@gmail.com
 
-# Googleアプリパスワード（後述の手順で取得）
+# あなたのGmailパスワード
 GMAIL_PASSWORD=your-app-password
 
 # あなたの楽天ユーザーID
@@ -53,7 +53,7 @@ HEADLESS=false
 
 ### 3. クリック対象の画像を準備
 
-クリックしたいボタンやリンクの画像を用意します：
+クリックしたいボタンやリンクの画像を用意します：（デフォルトでいくつか用意されています）
 
 1. プロジェクトフォルダ内の`images`フォルダを開く
 2. クリックしたいボタンのスクリーンショットを撮影
