@@ -13,6 +13,16 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Environment
+.env
+auth.json
+
+# Build
+dist/
+
 # Project specific
 .claude/
 do_prompt.md
+
+# Debug
+debug/
