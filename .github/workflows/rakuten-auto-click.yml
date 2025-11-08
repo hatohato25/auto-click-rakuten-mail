@@ -50,6 +50,19 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
 
+      # 認証情報（auth.json）をGitHub Secretsから復元
+      - name: Restore auth.json from secrets
+        env:
+          AUTH_JSON_BASE64: ${{ secrets.AUTH_JSON_BASE64 }}
+        run: |
+          if [ -n "$AUTH_JSON_BASE64" ]; then
+            echo "認証情報（auth.json）を復元しています..."
+            echo "$AUTH_JSON_BASE64" | base64 --decode > auth.json
+            echo "✅ auth.jsonの復元が完了しました"
+          else
+            echo "⚠️  AUTH_JSON_BASE64が設定されていません。初回ログインが実行されます。"
+          fi
+
       # 環境変数を設定して実行
       - name: Run auto-click script
         env:

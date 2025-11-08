@@ -14,7 +14,8 @@
     "format": "npx @biomejs/biome format --write",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "encode-auth": "base64 -i auth.json > auth.json.base64 && echo '✅ auth.jsonをbase64エンコードしました。auth.json.base64の内容をGitHub SecretsのAUTH_JSON_BASE64に設定してください。'"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

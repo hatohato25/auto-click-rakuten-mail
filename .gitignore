@@ -16,6 +16,8 @@ Thumbs.db
 # Environment
 .env
 auth.json
+auth.json.base64
+auth.json.backup
 
 # Build
 dist/
