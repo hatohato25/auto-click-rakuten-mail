@@ -112,8 +112,9 @@ export class ImageRecognitionService {
 
       // サイズの許容差（割合ベース）
       // boundingBoxはCSSレンダリングサイズのため、実際の画像サイズと大きく異なる場合がある
-      // 50%の許容差を設定（例: 678x151の画像が339~1017x76~227の範囲ならマッチング対象）
-      const SIZE_TOLERANCE_RATIO = 0.5;
+      // 20%の許容差を設定（例: 678x151の画像が542~814x121~181の範囲ならマッチング対象）
+      // より厳密な範囲にすることで無関係な画像のスクリーンショット取得を削減し、パフォーマンスを向上
+      const SIZE_TOLERANCE_RATIO = 0.2;
       let skippedCount = 0;
 
       // 各画像要素に対してマッチングを試行
@@ -135,7 +136,7 @@ export class ImageRecognitionService {
         for (let i = 0; i < targetImageSizes.length; i++) {
           const targetSize = targetImageSizes[i];
 
-          // 許容範囲を計算（±50%）
+          // 許容範囲を計算（±20%）
           const widthMin = targetSize.width * (1 - SIZE_TOLERANCE_RATIO);
           const widthMax = targetSize.width * (1 + SIZE_TOLERANCE_RATIO);
           const heightMin = targetSize.height * (1 - SIZE_TOLERANCE_RATIO);

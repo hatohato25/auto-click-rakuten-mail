@@ -201,6 +201,107 @@ A: 現在のバージョンでは1つのアカウントのみ対応していま�
 
 A: クリック成功後は自動的にゴミ箱に移動します（30日後に自動削除）。クリック対象が見つからなかった場合は未読に戻されます。
 
+## 🤖 GitHub Actionsでの定期実行
+
+GitHub Actionsを使用して、このツールを定期的に自動実行できます。
+
+### セットアップ手順
+
+#### 1. リポジトリをGitHubにプッシュ
+
+プロジェクトをGitHubリポジトリにプッシュしてください：
+
+```bash
+git init
+git add .
+git commit -m "Initial commit"
+git branch -M main
+git remote add origin https://github.com/YOUR_USERNAME/auto-click-rakuten-mail.git
+git push -u origin main
+```
+
+**重要**: `.env`と`auth.json`は`.gitignore`に含まれているため、GitHubにアップロードされません。
+
+#### 2. GitHub Secretsの設定
+
+GitHubリポジトリの設定画面から、以下のSecretsを設定します：
+
+1. リポジトリページで **Settings** → **Secrets and variables** → **Actions** を開く
+2. **New repository secret** をクリック
+3. 以下の4つのSecretsを追加：
+
+| Name | Value |
+|------|-------|
+| `GMAIL_EMAIL` | あなたのGmailアドレス |
+| `GMAIL_PASSWORD` | GmailアプリパスワードG |
+| `RAKUTEN_USER_ID` | 楽天ユーザーID |
+| `RAKUTEN_PASSWORD` | 楽天パスワード |
+
+#### 3. GitHub Variablesの設定（オプション）
+
+デフォルト値と異なる設定にしたい場合は、Variablesを設定します：
+
+1. **Settings** → **Secrets and variables** → **Actions** → **Variables** タブを開く
+2. **New repository variable** をクリック
+3. 以下のVariablesを必要に応じて追加：
+
+| Name | Default Value | Description |
+|------|---------------|-------------|
+| `SEARCH_QUERY` | `from:rakuten in:inbox -in:trash -in:spam` | メール検索条件 |
+| `IMAGE_MATCH_THRESHOLD` | `0.8` | 画像マッチング閾値 |
+| `PIXEL_MATCH_THRESHOLD` | `0.1` | ピクセルマッチング閾値 |
+
+**注意**: これらのVariablesは設定しなくてもデフォルト値が使用されます。
+
+#### 4. ワークフローの実行
+
+ワークフローファイル（`.github/workflows/rakuten-auto-click.yml`）はすでに含まれています。
+
+**自動実行スケジュール**:
+- デフォルト: 毎日日本時間 9:00（UTC 0:00）に実行
+- スケジュールを変更したい場合は、ワークフローファイルの`cron`設定を編集してください
+
+**手動実行**:
+1. リポジトリページで **Actions** タブを開く
+2. **Rakuten Mail Auto Click** ワークフローを選択
+3. **Run workflow** ボタンをクリック
+4. **Run workflow** を確認
+
+#### 5. 実行結果の確認
+
+1. **Actions** タブで実行状況を確認
+2. 各ワークフローをクリックすると詳細ログが表示されます
+3. エラーが発生した場合、デバッグ用のスクリーンショットが自動的にアップロードされます
+
+### GitHub Actions実行の仕組み
+
+**ローカル実行との違い**:
+- **認証**: `auth.json`は使用せず、毎回Gmailと楽天にログインします
+- **ブラウザ**: ヘッドレスモード（`HEADLESS=true`）で実行
+- **環境変数**: GitHub SecretsとVariablesから読み込み
+
+**セキュリティ**:
+- Secretsは暗号化されて保存されます
+- ログにはパスワードが表示されません（自動マスキング）
+- `auth.json`は実行ごとに生成・破棄されます
+
+### トラブルシューティング
+
+**Q: ワークフローが失敗します**
+
+A: 以下を確認してください：
+1. GitHub Secretsがすべて正しく設定されているか
+2. Gmailアプリパスワードが正しいか
+3. Actionsタブのログでエラー内容を確認
+
+**Q: スケジュール実行の時間を変更したい**
+
+A: `.github/workflows/rakuten-auto-click.yml`ファイルの`cron`設定を変更してください：
+```yaml
+schedule:
+  - cron: '0 12 * * *'  # 日本時間21:00（UTC 12:00）
+```
+
 ---
 
 **作成者**: hatohato25@gmail.com

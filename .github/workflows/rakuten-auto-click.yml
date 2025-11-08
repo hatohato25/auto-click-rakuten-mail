@@ -1,0 +1,76 @@
+name: Rakuten Mail Auto Click
+
+on:
+  # スケジュール実行（毎日日本時間9:00 = UTC 0:00）
+  schedule:
+    - cron: '0 0 * * *'
+
+  # 手動実行トリガー
+  workflow_dispatch:
+
+jobs:
+  auto-click:
+    runs-on: ubuntu-latest
+
+    steps:
+      # リポジトリをチェックアウト
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Node.jsのセットアップ
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      # 依存関係のインストール
+      - name: Install dependencies
+        run: npm ci
+
+      # Playwright chromiumのキャッシュ設定
+      - name: Get Playwright version
+        id: playwright-version
+        run: echo "version=$(npm list @playwright/test --depth=0 --json | jq -r '.dependencies."@playwright/test".version')" >> $GITHUB_OUTPUT
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      # Playwright chromiumのインストール（キャッシュがない場合のみ）
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      # システム依存関係のインストール（キャッシュがある場合）
+      - name: Install Playwright system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      # 環境変数を設定して実行
+      - name: Run auto-click script
+        env:
+          # Secrets（機密情報）
+          GMAIL_EMAIL: ${{ secrets.GMAIL_EMAIL }}
+          GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
+          RAKUTEN_USER_ID: ${{ secrets.RAKUTEN_USER_ID }}
+          RAKUTEN_PASSWORD: ${{ secrets.RAKUTEN_PASSWORD }}
+          # Variables（非機密情報）
+          SEARCH_QUERY: ${{ vars.SEARCH_QUERY || 'from:rakuten in:inbox -in:trash -in:spam' }}
+          IMAGE_MATCH_THRESHOLD: ${{ vars.IMAGE_MATCH_THRESHOLD || '0.8' }}
+          PIXEL_MATCH_THRESHOLD: ${{ vars.PIXEL_MATCH_THRESHOLD || '0.1' }}
+          # CI環境固有の設定
+          HEADLESS: true
+        run: npm run start:ci
+
+      # エラー時のデバッグ情報出力
+      - name: Upload debug screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshots
+          path: debug/
+          retention-days: 7

@@ -371,13 +371,4 @@ export class GmailService {
       );
     }
   }
-
-  /**
-   * 検索結果の最初のメールを開く
-   * @param page - ページインスタンス
-   * @deprecated openMailByIndex(page, 0) を使用してください
-   */
-  async openFirstMail(page: Page): Promise<void> {
-    return this.openMailByIndex(page, 0);
-  }
 }
