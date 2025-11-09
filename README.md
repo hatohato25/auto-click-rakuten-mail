@@ -222,22 +222,52 @@ git push -u origin main
 
 **重要**: `.env`と`auth.json`は`.gitignore`に含まれているため、GitHubにアップロードされません。
 
-#### 2. GitHub Secretsの設定
+#### 2. ローカルでauth.jsonを生成
 
-GitHubリポジトリの設定画面から、以下のSecretsを設定します：
+GitHub Actionsで実行する前に、ローカル環境で認証情報を保存する必要があります：
 
-1. リポジトリページで **Settings** → **Secrets and variables** → **Actions** を開く
-2. **New repository secret** をクリック
-3. 以下の4つのSecretsを追加：
+1. ローカルで非headlessモードで一度実行してauth.jsonを生成:
+   ```bash
+   HEADLESS=false npm start
+   ```
+2. ログインが成功すると、プロジェクトルートに`auth.json`が生成されます
+
+#### 3. auth.jsonをGitHub Secretsに保存
+
+1. auth.jsonをbase64エンコード:
+   ```bash
+   npm run encode-auth
+   ```
+2. `auth.json.base64`ファイルが生成されるので、中身をコピー
+3. GitHubリポジトリで **Settings** → **Secrets and variables** → **Actions** を開く
+4. **New repository secret** をクリック
+5. 以下のSecretsを追加：
 
 | Name | Value |
 |------|-------|
-| `GMAIL_EMAIL` | あなたのGmailアドレス |
-| `GMAIL_PASSWORD` | GmailアプリパスワードG |
-| `RAKUTEN_USER_ID` | 楽天ユーザーID |
-| `RAKUTEN_PASSWORD` | 楽天パスワード |
+| `AUTH_JSON_BASE64` | `auth.json.base64`の内容（base64エンコード済み） |
+| `GMAIL_EMAIL` | あなたのGmailアドレス（フォールバック用） |
+| `GMAIL_PASSWORD` | Gmailアプリパスワード（フォールバック用） |
+| `RAKUTEN_USER_ID` | 楽天ユーザーID（フォールバック用） |
+| `RAKUTEN_PASSWORD` | 楽天パスワード（フォールバック用） |
 
-#### 3. GitHub Variablesの設定（オプション）
+**重要**: `AUTH_JSON_BASE64`が設定されていれば、Gmail/楽天への毎回のログインは不要になります。
+
+#### 4. 認証情報の更新（セッション有効期限切れ時）
+
+auth.jsonのセッション有効期限が切れた場合、GitHub Actions実行が失敗します。その場合：
+
+1. ローカルで再度ログイン:
+   ```bash
+   HEADLESS=false npm start
+   ```
+2. 新しいauth.jsonをエンコード:
+   ```bash
+   npm run encode-auth
+   ```
+3. GitHub Secretsの`AUTH_JSON_BASE64`を新しい値で更新
+
+#### 5. GitHub Variablesの設定（オプション）
 
 デフォルト値と異なる設定にしたい場合は、Variablesを設定します：
 
@@ -253,7 +283,7 @@ GitHubリポジトリの設定画面から、以下のSecretsを設定します�
 
 **注意**: これらのVariablesは設定しなくてもデフォルト値が使用されます。
 
-#### 4. ワークフローの実行
+#### 6. ワークフローの実行
 
 ワークフローファイル（`.github/workflows/rakuten-auto-click.yml`）はすでに含まれています。
 
@@ -267,7 +297,7 @@ GitHubリポジトリの設定画面から、以下のSecretsを設定します�
 3. **Run workflow** ボタンをクリック
 4. **Run workflow** を確認
 
-#### 5. 実行結果の確認
+#### 7. 実行結果の確認
 
 1. **Actions** タブで実行状況を確認
 2. 各ワークフローをクリックすると詳細ログが表示されます
@@ -276,23 +306,33 @@ GitHubリポジトリの設定画面から、以下のSecretsを設定します�
 ### GitHub Actions実行の仕組み
 
 **ローカル実行との違い**:
-- **認証**: `auth.json`は使用せず、毎回Gmailと楽天にログインします
+- **認証**: GitHub Secretsから`AUTH_JSON_BASE64`を復元して使用（ログイン処理をスキップ）
 - **ブラウザ**: ヘッドレスモード（`HEADLESS=true`）で実行
 - **環境変数**: GitHub SecretsとVariablesから読み込み
 
 **セキュリティ**:
 - Secretsは暗号化されて保存されます
-- ログにはパスワードが表示されません（自動マスキング）
-- `auth.json`は実行ごとに生成・破棄されます
+- ログにはパスワードや認証情報が表示されません（自動マスキング）
+- `auth.json`は実行時にSecretsから復元され、実行後に破棄されます
+- リポジトリには`auth.json`がコミットされません（`.gitignore`で除外）
+
+**パフォーマンス**:
+- auth.json方式により、毎回のログイン処理が不要
+- 50通のメール処理が約8.6分で完了（要件の10分以内を達成）
 
 ### トラブルシューティング
 
 **Q: ワークフローが失敗します**
 
 A: 以下を確認してください：
-1. GitHub Secretsがすべて正しく設定されているか
-2. Gmailアプリパスワードが正しいか
-3. Actionsタブのログでエラー内容を確認
+1. `AUTH_JSON_BASE64`が正しく設定されているか
+2. auth.jsonのセッション有効期限が切れていないか（切れている場合は再生成が必要）
+3. GitHub Secretsがすべて正しく設定されているか
+4. Actionsタブのログでエラー内容を確認
+
+**Q: セッション有効期限はどのくらいですか？**
+
+A: Gmailと楽天のセッション有効期限は通常数週間～数ヶ月です。有効期限が切れた場合、GitHub Actions実行が失敗するので、その際はローカルで再度ログインして`AUTH_JSON_BASE64`を更新してください。
 
 **Q: スケジュール実行の時間を変更したい**
 
