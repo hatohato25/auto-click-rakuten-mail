@@ -58,68 +58,14 @@ export class RakutenService {
     try {
       console.log('楽天にログインしています...');
 
-      // ページが完全に読み込まれるまで待機（最小限）
+      // ページが完全に読み込まれるまで待機
       await page.waitForLoadState('domcontentloaded');
-      await page.waitForTimeout(200);
+      await page.waitForTimeout(500); // 待機時間を延長してページ要素の読み込みを確実にする
 
       // ========================================
-      // ステップ1: ユーザーID入力
+      // 現在の画面を判定（ユーザーID入力画面 or パスワード入力画面）
       // ========================================
-      console.log('[ステップ1] ユーザーID入力画面');
-
-      const userIdSelectors = [
-        'input[name="u"]',
-        'input[id="loginInner_u"]',
-        'input[type="text"]',
-        'input[placeholder*="ユーザID"]',
-        'input[placeholder*="User ID"]',
-        '#loginInner_u',
-      ];
-
-      let userIdInput: Awaited<ReturnType<Page['$']>> = null;
-
-      // 各セレクタを順番に試す（タイムアウトを大幅短縮）
-      for (const selector of userIdSelectors) {
-        try {
-          userIdInput = await page.waitForSelector(selector, { timeout: 500, state: 'visible' });
-          if (userIdInput) {
-            console.log(`  ✓ ユーザーID入力フィールドが見つかりました: ${selector}`);
-            break;
-          }
-        } catch {
-          // 次のセレクタを試す
-        }
-      }
-
-      if (!userIdInput) {
-        // デバッグ用：スクリーンショットを保存
-        await page.screenshot({ path: 'rakuten-login-error-step1.png' });
-        console.error(
-          '  ✗ ログインページのスクリーンショットを保存しました: rakuten-login-error-step1.png'
-        );
-        console.error('  ✗ 現在のURL:', page.url());
-        throw new Error('ユーザーID入力フィールドが見つかりませんでした');
-      }
-
-      // ユーザーIDを入力（待機時間を削除）
-      console.log('  → ユーザーIDを入力しています...');
-      await userIdInput.fill(userId);
-
-      // 「次へ」ボタンを探してクリック（タイムアウトを大幅短縮）
-      const nextBtn = page.getByRole('button', { name: '次へ' });
-      await nextBtn.waitFor({ timeout: 1000, state: 'visible' });
-      console.log('  ✓ 次へボタンが見つかりました');
-      await nextBtn.click();
-      console.log('  → 次へボタンをクリックしました');
-
-      // ページ遷移を待機（パスワード入力画面へ）- 最小限の待機
-      await page.waitForLoadState('domcontentloaded');
-      await page.waitForTimeout(200);
-
-      // ========================================
-      // ステップ2: パスワード入力
-      // ========================================
-      console.log('[ステップ2] パスワード入力画面');
+      const currentUrl = page.url();
 
       const passwordSelectors = [
         'input[name="p"]',
@@ -128,10 +74,107 @@ export class RakutenService {
         '#loginInner_p',
       ];
 
+      // パスワード入力フィールドが既に表示されているか確認
+      // 既にユーザーIDが入力済みの場合、パスワード入力画面から開始される
+      let isPasswordScreen = false;
+
+      // 1. まずURLで判定（最優先）
+      // URL末尾に '#/sign_in/password' または '/password' が含まれる場合はパスワード画面
+      if (currentUrl.includes('#/sign_in/password') || currentUrl.includes('/password')) {
+        isPasswordScreen = true;
+      } else {
+        // 2. URLで判定できない場合はパスワード入力フィールドの存在で判定
+        for (const selector of passwordSelectors) {
+          try {
+            const passwordCheck = await page.waitForSelector(selector, {
+              timeout: 1000, // タイムアウトを延長
+              state: 'visible',
+            });
+            if (passwordCheck) {
+              isPasswordScreen = true;
+              break;
+            }
+          } catch {
+            // 次のセレクタを試す
+          }
+        }
+      }
+
+      if (isPasswordScreen) {
+        console.log('パスワード入力画面から開始（ユーザーID入力済み）');
+      }
+
+      // ========================================
+      // ステップ1: ユーザーID入力（必要な場合のみ）
+      // ========================================
+      if (!isPasswordScreen) {
+        console.log('[ステップ1] ユーザーID入力画面');
+
+        const userIdSelectors = [
+          'input[name="u"]',
+          'input[id="loginInner_u"]',
+          'input[type="text"]',
+          'input[placeholder*="ユーザID"]',
+          'input[placeholder*="User ID"]',
+          '#loginInner_u',
+        ];
+
+        let userIdInput: Awaited<ReturnType<Page['$']>> = null;
+
+        // 各セレクタを順番に試す（タイムアウトを大幅短縮）
+        for (const selector of userIdSelectors) {
+          try {
+            userIdInput = await page.waitForSelector(selector, {
+              timeout: 500,
+              state: 'visible',
+            });
+            if (userIdInput) {
+              console.log(`  ✓ ユーザーID入力フィールドが見つかりました: ${selector}`);
+              break;
+            }
+          } catch {
+            // 次のセレクタを試す
+          }
+        }
+
+        if (!userIdInput) {
+          // デバッグ用：スクリーンショットを保存
+          await page.screenshot({ path: 'rakuten-login-error-step1.png' });
+          console.error(
+            '  ✗ ログインページのスクリーンショットを保存しました: rakuten-login-error-step1.png'
+          );
+          console.error('  ✗ 現在のURL:', page.url());
+          throw new Error('ユーザーID入力フィールドが見つかりませんでした');
+        }
+
+        // ユーザーIDを入力（待機時間を削除）
+        console.log('  → ユーザーIDを入力しています...');
+        await userIdInput.fill(userId);
+
+        // 「次へ」ボタンを探してクリック（タイムアウトを大幅短縮）
+        const nextBtn = page.getByRole('button', { name: '次へ' });
+        await nextBtn.waitFor({ timeout: 1000, state: 'visible' });
+        console.log('  ✓ 次へボタンが見つかりました');
+        await nextBtn.click();
+        console.log('  → 次へボタンをクリックしました');
+
+        // ページ遷移を待機（パスワード入力画面へ）- 最小限の待機
+        await page.waitForLoadState('domcontentloaded');
+        await page.waitForTimeout(200);
+      } else {
+        console.log('[ステップ1] スキップ（既にユーザーID入力済み）');
+      }
+
+      // ========================================
+      // ステップ2: パスワード入力
+      // ========================================
+      console.log('[ステップ2] パスワード入力画面');
+
+      // パスワード入力フィールドを探す（画面判定で使用したセレクタを再利用）
       let passwordInput: Awaited<ReturnType<Page['$']>> = null;
       for (const selector of passwordSelectors) {
         try {
-          passwordInput = await page.waitForSelector(selector, { timeout: 500, state: 'visible' });
+          passwordInput = await page.waitForSelector(selector, { timeout: 1000, state: 'visible' });
           if (passwordInput) {
             console.log(`  ✓ パスワード入力フィールドが見つかりました: ${selector}`);
             break;
