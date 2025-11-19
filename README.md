@@ -344,5 +344,4 @@ schedule:
 
 ---
 
-**作成者**: hatohato25@gmail.com
 **ライセンス**: MIT
