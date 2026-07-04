@@ -11,7 +11,6 @@ dotenvConfig();
  */
 export function loadConfig(): Config {
   const email = process.env.GMAIL_EMAIL;
-  const password = process.env.GMAIL_PASSWORD;
   const searchQuery = process.env.SEARCH_QUERY || 'from:rakuten';
   const headless = process.env.HEADLESS === 'true';
   const timeout = Number.parseInt(process.env.TIMEOUT || '30000', 10);
@@ -27,10 +26,6 @@ export function loadConfig(): Config {
     throw new Error('環境変数GMAIL_EMAILが設定されていません');
   }
 
-  if (!password) {
-    throw new Error('環境変数GMAIL_PASSWORDが設定されていません');
-  }
-
   if (!rakutenUserId) {
     throw new Error('環境変数RAKUTEN_USER_IDが設定されていません');
   }
@@ -41,7 +36,6 @@ export function loadConfig(): Config {
 
   return {
     email,
-    password,
     searchQuery,
     headless,
     timeout,

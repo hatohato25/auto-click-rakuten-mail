@@ -27,7 +27,6 @@ export interface ProcessSummary {
  */
 export interface Config {
   email: string;
-  password: string;
   searchQuery: string;
   headless: boolean;
   timeout: number;

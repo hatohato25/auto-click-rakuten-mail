@@ -32,11 +32,8 @@ npm install
 プロジェクトフォルダ内に`.env`というファイルを作成し、以下の情報を入力してください：
 
 ```env
-# あなたのGmailアドレス
+# あなたのGmailアドレス（Gmailへは初回に手動ログインするためパスワードは不要）
 GMAIL_EMAIL=your-email@gmail.com
-
-# あなたのGmailパスワード
-GMAIL_PASSWORD=your-app-password
 
 # あなたの楽天ユーザーID
 RAKUTEN_USER_ID=your-rakuten-user-id
@@ -183,7 +180,7 @@ HEADLESS=true
 ## 🔐 セキュリティ
 
 - `.env`ファイルと`auth.json`には機密情報が含まれるため、厳重に管理してください
-- 通常のパスワードではなく、必ずGoogleアプリパスワードを使用してください
+- Gmailへは初回に`HEADLESS=false`で手動ログインし、認証状態を`auth.json`に保存します（Gmailパスワードは`.env`に保存しません）
 - このツールはパスワードをログに出力しません
 - `.env`と`auth.json`は`.gitignore`に含まれており、GitHubにアップロードされません
 
@@ -247,7 +244,6 @@ GitHub Actionsで実行する前に、ローカル環境で認証情報を保存
 |------|-------|
 | `AUTH_JSON_BASE64` | `auth.json.base64`の内容（base64エンコード済み） |
 | `GMAIL_EMAIL` | あなたのGmailアドレス（フォールバック用） |
-| `GMAIL_PASSWORD` | Gmailアプリパスワード（フォールバック用） |
 | `RAKUTEN_USER_ID` | 楽天ユーザーID（フォールバック用） |
 | `RAKUTEN_PASSWORD` | 楽天パスワード（フォールバック用） |
 

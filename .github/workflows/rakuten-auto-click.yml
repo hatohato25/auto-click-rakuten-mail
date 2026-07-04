@@ -68,7 +68,6 @@ jobs:
         env:
           # Secrets（機密情報）
           GMAIL_EMAIL: ${{ secrets.GMAIL_EMAIL }}
-          GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
           RAKUTEN_USER_ID: ${{ secrets.RAKUTEN_USER_ID }}
           RAKUTEN_PASSWORD: ${{ secrets.RAKUTEN_PASSWORD }}
           # Variables（非機密情報）

@@ -44,13 +44,22 @@ async function main(): Promise<void> {
     const storageStateExists = fs.existsSync(config.storageStatePath);
 
     if (!storageStateExists) {
-      console.log('初回ログイン: 認証情報を入力します\n');
+      // Googleは自動化を検知して2段階認証・reCAPTCHA・本人確認を挟むため、ID/パスワードの
+      // 自動入力によるログインは失敗しやすい。初回はブラウザを表示してユーザーに手動ログインしてもらい、
+      // ログイン完了を検知してから認証状態(auth.json)を保存する
+      if (config.headless) {
+        throw new Error(
+          '初回ログイン（auth.json未作成）はブラウザ表示が必要です。`HEADLESS=false npm start` を実行して手動ログインしてください。'
+        );
+      }
 
-      // Gmailにアクセス
-      await gmailService.accessGmail(page, config.email);
+      console.log('初回ログイン: ブラウザで手動ログインしてください\n');
 
-      // パスワード入力してログイン
-      await gmailService.login(page, config.password);
+      // Gmailのログインページを開く
+      await browserService.goto(page, 'https://mail.google.com');
+
+      // ユーザーの手動ログイン完了を待つ
+      await gmailService.waitForManualLogin(page);
 
       console.log('\n✅ Gmailへのログインに成功しました！\n');
 
@@ -62,6 +71,11 @@ async function main(): Promise<void> {
       // Gmailにアクセス（既にログイン済みの状態）
       await browserService.goto(page, 'https://mail.google.com');
       await page.waitForTimeout(2000);
+
+      // storageStateの有無だけでは「実際にログインできているか」は判定できない
+      // （セッション失効時は未ログイン向けのマーケティングページへリダイレクトされる）ため、
+      // 後続の検索処理に進む前に実際のログイン状態を検証する
+      await gmailService.verifyLoggedIn(page);
 
       console.log('\n✅ 認証状態を使用してGmailにアクセスしました！\n');
     }

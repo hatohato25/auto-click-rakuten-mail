@@ -1,5 +1,7 @@
 import type { Page } from 'playwright';
 import type { BrowserService } from './browser.js';
+import fs from 'node:fs';
+import path from 'node:path';
 
 /**
  * Gmail操作を管理するサービスクラス
@@ -7,81 +9,26 @@ import type { BrowserService } from './browser.js';
 export class GmailService {
   private readonly GMAIL_URL = 'https://mail.google.com';
 
+  // メール行のセレクタはGmailのUI変更で複数パターンが混在するため、
+  // 検索結果の待機（searchMails）・件数取得（getMailCount）・メールを開く（openMailByIndex）で共通利用する
+  private readonly MAIL_ROW_SELECTORS = [
+    'tr.zA', // Gmail標準のメール行
+    'div[role="main"] table tbody tr[role="row"]', // メインエリア内のテーブル行
+    'table.F tbody tr', // テーブルF内の行
+  ];
+
+  // searchMailsで遷移した検索URLを保持し、backToSearchResultsで検索結果コンテキストが
+  // 外れてしまった場合に確実に復帰できるようにする（Escapeキーのみでは受信トレイに
+  // 戻ってしまうことがあり、2件目以降が検索結果ではなく受信トレイ全体に対して
+  // 処理されてしまう不具合の原因になっていた）
+  private lastSearchUrl: string | null = null;
+
   constructor(private browserService: BrowserService) {}
 
   /**
-   * Gmailにアクセスし、メールアドレス入力画面まで進む
-   * @param page - ページインスタンス
-   * @param email - Gmailアドレス
-   */
-  async accessGmail(page: Page, email: string): Promise<void> {
-    try {
-      // GmailのURLへ遷移
-      console.log('Gmailにアクセスしています...');
-      await this.browserService.goto(page, this.GMAIL_URL);
-
-      // ログインページへのリダイレクトを待つ（最小限に短縮）
-      await page.waitForTimeout(500);
-
-      // メールアドレス入力フィールドを待機
-      // Googleのログインページではidentifier入力フィールドが使用される
-      const emailInputSelector = 'input[type="email"]';
-      console.log('メールアドレス入力フィールドを待機中...');
-      await this.browserService.waitForSelector(page, emailInputSelector);
-
-      // メールアドレスを入力
-      console.log(`メールアドレス「${email}」を入力しています...`);
-      await page.fill(emailInputSelector, email);
-
-      // 「次へ」ボタンをクリック
-      const nextButtonSelector = 'button:has-text("次へ"), button:has-text("Next")';
-      console.log('「次へ」ボタンをクリックしています...');
-      await this.browserService.click(page, nextButtonSelector);
-
-      console.log('メールアドレスの入力が完了しました');
-    } catch (error) {
-      throw new Error(
-        `Gmailへのアクセスに失敗しました: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-
-  /**
-   * パスワードを入力してログインする
-   * @param page - ページインスタンス
-   * @param password - パスワード
-   */
-  async login(page: Page, password: string): Promise<void> {
-    try {
-      // パスワード入力フィールドを待機
-      // Googleログインページではname="Passwd"またはtype="password"が使用される
-      const passwordInputSelector = 'input[type="password"]';
-      console.log('パスワード入力フィールドを待機中...');
-      await this.browserService.waitForSelector(page, passwordInputSelector);
-
-      // パスワードを入力
-      console.log('パスワードを入力しています...');
-      await page.fill(passwordInputSelector, password);
-
-      // 「次へ」ボタンをクリック
-      const nextButtonSelector = 'button:has-text("次へ"), button:has-text("Next")';
-      console.log('「次へ」ボタンをクリックしています...');
-      await this.browserService.click(page, nextButtonSelector);
-
-      // ログイン処理完了を待機（Gmailのメイン画面が表示されるまで - 短縮）
-      console.log('ログイン処理完了を待機中...');
-      await page.waitForTimeout(2000);
-
-      console.log('Gmailへのログインが完了しました');
-    } catch (error) {
-      throw new Error(
-        `Gmailへのログインに失敗しました: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-
-  /**
    * Gmail内でメールを検索する
+   * 検索ボックスのDOM要素はGmailのUI変更で頻繁にセレクタが変わり壊れやすいため、
+   * GmailがサポートするURLハッシュ検索（#search/クエリ）へ直接遷移する方式を採用する
    * @param page - ページインスタンス
    * @param query - 検索クエリ（例: "from:rakuten"）
    * @returns 検索結果のメールリスト
@@ -90,38 +37,303 @@ export class GmailService {
     try {
       console.log(`検索クエリ「${query}」でメールを検索しています...`);
 
-      // 検索ボックスを待機
-      // Gmailの検索ボックスは aria-label="メールを検索" または placeholder で識別できる
-      const searchBoxSelector = 'input[aria-label="メールを検索"], input[placeholder*="検索"]';
-      console.log('検索ボックスを待機中...');
-      await this.browserService.waitForSelector(page, searchBoxSelector, 10000);
+      // 検索クエリはURLハッシュに含めるためエンコードが必要
+      const searchUrl = `${this.GMAIL_URL}/mail/u/0/#search/${encodeURIComponent(query)}`;
+      console.log('検索結果のURLへ遷移しています...');
 
-      // 検索クエリを入力
-      console.log('検索クエリを入力しています...');
-      await page.fill(searchBoxSelector, query);
+      try {
+        await this.navigateToSearchUrl(page, searchUrl);
+      } catch (waitError) {
+        // 検索結果・空結果表示のどちらも現れなかった場合、
+        // インタースティシャル等で実際には検索できていない可能性が高いため画面を記録する
+        await this.saveDebugScreenshot(page, 'search_result_timeout');
+        throw new Error(
+          `検索結果の描画がタイムアウトしました。ログイン後の案内ページ等が表示されている可能性があります（debug/フォルダのスクリーンショットを確認してください）: ${waitError instanceof Error ? waitError.message : String(waitError)}`
+        );
+      }
 
-      // Enterキーを押して検索実行
-      console.log('検索を実行しています...');
-      await page.keyboard.press('Enter');
+      // フルロードしても何らかの理由でGmailが検索ビュー以外（受信トレイ等）へ
+      // 戻された場合、行の存在だけでは検索結果と受信トレイを区別できず、
+      // 誤って受信トレイ全体を処理してしまう危険があるため明示的に検証する
+      this.assertOnSearchResultsHash(page, 'メール検索');
 
-      // 検索実行後、古いDOM（受信トレイ）が残るため、ページをリロードして検索結果を確実に表示
-      console.log('検索結果の読み込みを待機中...');
-      await page.waitForTimeout(1000);
+      // 「検索できたこと」の判定は行の有無でしか行えないため、実際に
+      // from:rakuten等の検索結果になっているかをログから目視確認できるようにする
+      await this.logSearchResultsPreview(page);
 
-      // ページをリロードして検索結果のDOMを更新
-      await page.evaluate(() => {
-        // biome-ignore lint/suspicious/noExplicitAny: evaluate内ではlocationが利用可能
-        (globalThis as any).location.reload();
-      });
+      // 実際に何が描画された状態で検索完了と判定したかを常に記録し、
+      // ログ上「成功」に見えても実態を目視確認できるようにする
+      await this.saveDebugScreenshot(page, 'search_result');
 
-      // リロード完了を待機（networkidleからdomcontentloadedに変更）
-      await page.waitForLoadState('domcontentloaded');
-      await page.waitForTimeout(1500);
+      // backToSearchResultsでEscapeキーが検索結果コンテキストを外してしまった場合に
+      // 同じ検索へ再度遷移して復帰できるよう、成功した検索URLを保持しておく
+      this.lastSearchUrl = searchUrl;
 
       console.log('検索が完了しました');
     } catch (error) {
       throw new Error(
         `メール検索に失敗しました: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  /**
+   * 検索結果のURLへ遷移し、確実に検索ビューを描画させる。
+   * ハッシュ部分のみが異なるURLへのgotoは同一ドキュメント内ナビゲーションとして扱われ、
+   * Gmailが検索ビューへ切り替わらず受信トレイ表示のままになることがある。
+   * そのためgoto後に明示的なreloadを行いフルロード（完全な再読み込み）を強制する。
+   * storageStateによるログインセッションはブラウザコンテキストに保持されるため、
+   * reloadしてもログイン状態は失われない。
+   * searchMailsでの初回遷移と、backToSearchResultsでの検索結果コンテキスト復帰の
+   * 両方から呼び出す共通ロジックのため切り出している。
+   * @param page - ページインスタンス
+   * @param searchUrl - 検索結果のURL（#search/クエリ を含む）
+   */
+  private async navigateToSearchUrl(page: Page, searchUrl: string): Promise<void> {
+    await this.browserService.goto(page, searchUrl);
+
+    // ハッシュ変更だけでは検索ビューへ切り替わらない場合があるため、
+    // フルリロードして指定ハッシュの状態からページ全体を再構築させる
+    await page.reload({ waitUntil: 'domcontentloaded' });
+
+    // 実際に検索結果一覧（メール行）またはGmailの空結果表示がDOMに現れるまで待つことで、
+    // ログイン後のインタースティシャル（案内／広告ページ）に隠れて
+    // 検索結果が描画されないまま「成功」と誤判定する事態を防ぐ
+    await this.waitForSearchResultsRendered(page);
+  }
+
+  /**
+   * 現在のURLハッシュが検索結果（#search/）のままであることを確認する。
+   * メール行のセレクタ（tr.zA等）は受信トレイの行とも共通のため、行の存在だけでは
+   * 検索結果と受信トレイを区別できない。フルロード後にGmailが何らかの理由で
+   * 検索ビュー以外へ遷移した場合、暗黙にフォールバックせず明示的にエラーとして扱う。
+   * @param page - ページインスタンス
+   * @param context - エラーメッセージに含める処理名
+   */
+  private assertOnSearchResultsHash(page: Page, context: string): void {
+    const currentUrl = page.url();
+    if (!currentUrl.includes('#search/')) {
+      throw new Error(
+        `${context}でGmailが検索ビューになっていません（現在のURL: ${currentUrl}）。受信トレイ全体を誤って処理する可能性があるため処理を中断します。`
+      );
+    }
+  }
+
+  /**
+   * 検索結果一覧の先頭数件の内容をログ出力する。
+   * ログ上「検索が完了しました」と表示されていても、実際には検索結果ではなく
+   * 受信トレイの内容だった、という誤判定を目視で確認できるようにするための診断用ログ。
+   * @param page - ページインスタンス
+   */
+  private async logSearchResultsPreview(page: Page): Promise<void> {
+    const previewRows = await page.evaluate((selectors: string[]) => {
+      // biome-ignore lint/suspicious/noExplicitAny: page.evaluate内ではdocumentが利用可能
+      const doc = (globalThis as any).document;
+
+      for (const selector of selectors) {
+        const rows = doc.querySelectorAll(selector);
+        if (rows.length > 0) {
+          return Array.from(rows)
+            .slice(0, 3)
+            .map(
+              // biome-ignore lint/suspicious/noExplicitAny: page.evaluate内でのDOM要素の型解決を簡略化するため
+              (row: any) => (row.innerText ?? '').replace(/\s+/g, ' ').trim().slice(0, 80)
+            );
+        }
+      }
+
+      return [];
+    }, this.MAIL_ROW_SELECTORS);
+
+    if (previewRows.length === 0) {
+      console.log('  検索結果プレビュー: 該当するメール行がありません（0件、または空結果表示）');
+      return;
+    }
+
+    console.log('  検索結果プレビュー（先頭最大3件）:');
+    for (const [idx, text] of previewRows.entries()) {
+      console.log(`    ${idx + 1}. ${text}`);
+    }
+  }
+
+  /**
+   * 検索結果一覧（メール行）またはGmailの空結果表示がDOMに現れるまで待機する。
+   * searchMailsでの初回遷移直後と、backToSearchResultsで検索URLへ復帰した直後の
+   * 両方から呼び出す共通ロジックのため切り出している。
+   * @param page - ページインスタンス
+   */
+  private async waitForSearchResultsRendered(page: Page): Promise<void> {
+    await page.waitForFunction(
+      (selectors: string[]) => {
+        // biome-ignore lint/suspicious/noExplicitAny: page.waitForFunction内ではdocumentが利用可能
+        const doc = (globalThis as any).document;
+
+        for (const selector of selectors) {
+          if (doc.querySelectorAll(selector).length > 0) {
+            return true;
+          }
+        }
+
+        // Gmailの「該当するメールはありません」等の空結果表示（日英）
+        const bodyText: string = doc.body?.innerText ?? '';
+        return (
+          bodyText.includes('見つかりませんでした') ||
+          bodyText.includes('No messages matched your search')
+        );
+      },
+      this.MAIL_ROW_SELECTORS,
+      { timeout: 10000 }
+    );
+  }
+
+  /**
+   * 保存済みセッション（storageState）でGmailにアクセスした直後に、
+   * 実際にログイン済みかどうかを検証する。
+   * セッションが失効している場合、mail.google.comは受信トレイではなく
+   * 未ログイン向けのマーケティング（Gmail紹介）ページへリダイレクトするため、
+   * それを検知せずに後続処理（検索）へ進むと「成功したように見えて実際は
+   * 何も処理していない」状態になってしまう。
+   * @param page - ページインスタンス
+   */
+  async verifyLoggedIn(page: Page): Promise<void> {
+    try {
+      console.log('ログイン状態を検証しています...');
+
+      if (!(await this.isLoggedIn(page))) {
+        await this.saveDebugScreenshot(page, 'not_logged_in');
+        throw new Error(
+          '保存済みセッション（auth.json）が失効しているため、Gmailにログインできていません。' +
+            'ローカルで `auth.json` を削除して `HEADLESS=false npm start` を実行し再ログインしてください。' +
+            'GitHub Actionsを使っている場合は再生成した認証情報で `AUTH_JSON_BASE64` シークレットを更新してください。'
+        );
+      }
+
+      console.log('ログイン状態を確認しました（Gmail受信トレイにアクセス済み）');
+    } catch (error) {
+      throw new Error(
+        `ログイン状態の検証に失敗しました: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  /**
+   * 現在のページがGmail受信トレイ（ログイン済み状態）かどうかを判定する。
+   * 受信トレイUIの有無・URL・マーケティングページ特有の文言の3つの兆候を組み合わせて判定する。
+   * 単独の兆候のみで判定すると、一時的なDOM未描画や偶然の文言一致により誤判定するおそれがあるため。
+   * @param page - ページインスタンス
+   * @returns ログイン済みならtrue
+   */
+  private async isLoggedIn(page: Page): Promise<boolean> {
+    const { hasGmailInboxUI, hasLoginPrompt } = await page.evaluate(() => {
+      // biome-ignore lint/suspicious/noExplicitAny: page.evaluate内ではdocumentが利用可能
+      const doc = (globalThis as any).document;
+
+      // ログイン済みの兆候: Gmailアプリ本体の受信トレイUI（メイン領域）が存在する
+      const hasGmailInboxUI = doc.querySelector('div[role="main"]') !== null;
+
+      // 未ログインの兆候: マーケティングページに固有の文言
+      // 「ログイン」等の汎用的な単語はGmailアプリ内（アカウント切替メニュー等）にも
+      // 現れうるため誤検知の原因になる。紹介ページ特有の文言のみを採用する
+      const bodyText: string = doc.body?.innerText ?? '';
+      const hasLoginPrompt =
+        bodyText.includes('アカウントを作成') || bodyText.includes('Create an account');
+
+      return { hasGmailInboxUI, hasLoginPrompt };
+    });
+
+    const isGmailAppUrl = page.url().includes('mail.google.com/mail/');
+    return hasGmailInboxUI && isGmailAppUrl && !hasLoginPrompt;
+  }
+
+  /**
+   * ブラウザ上でのユーザーによる手動ログイン完了を待機する。
+   * Googleは自動化を検知して2段階認証・reCAPTCHA・本人確認を挟むため、
+   * ID/パスワードの自動入力によるログインは失敗しやすい。確実に認証状態を得るため、
+   * ユーザーが手動でログインし受信トレイに到達したことを検知するまで待つ。
+   * @param page - ページインスタンス
+   * @param timeoutMs - 待機のタイムアウト（ミリ秒）
+   */
+  async waitForManualLogin(page: Page, timeoutMs = 300000): Promise<void> {
+    console.log(
+      '\n👤 ブラウザでGmailに手動ログインしてください（受信トレイの表示を検知するまで待機します）...\n'
+    );
+
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeoutMs) {
+      try {
+        if (await this.isLoggedIn(page)) {
+          console.log('✅ ログインを検知しました');
+          return;
+        }
+      } catch (error) {
+        // isLoggedIn内部のpage.evaluateは、ユーザーのログイン操作によるページ遷移と
+        // 実行タイミングが重なると「実行コンテキストが破棄された」例外を投げることがある。
+        // これは「まだログインが完了していない」ことを意味する一時的な事象であり、
+        // ループ全体にタイムアウトがあるため握りつぶして次のポーリングに委ねてよい。
+        // ただし想定外のエラーまで無条件に隠さないよう、遷移由来と判断できる場合のみ許容する。
+        if (this.isTransientNavigationError(error)) {
+          console.log(
+            '  ⏳ ページ遷移中のため判定をスキップしました。次のポーリングで再確認します...'
+          );
+        } else {
+          throw error;
+        }
+      }
+      // ログイン操作の完了をポーリングで待つ
+      await page.waitForTimeout(3000);
+    }
+
+    await this.saveDebugScreenshot(page, 'manual_login_timeout');
+    throw new Error(
+      `手動ログインの待機がタイムアウトしました（${Math.floor(timeoutMs / 1000)}秒）。ブラウザでログインを完了してから再度実行してください。`
+    );
+  }
+
+  /**
+   * ページ遷移・実行コンテキスト破棄に起因する一時的な例外かどうかを判定する。
+   * これらはユーザー操作によるナビゲーション中に発生しうる正常な事象であり、
+   * 「ログイン未完了」として扱ってポーリングを継続してよい。それ以外の例外は
+   * 想定外の不具合を隠さないよう、呼び出し元へそのまま伝播させる。
+   * @param error - 捕捉した例外
+   * @returns 一時的なナビゲーション由来の例外ならtrue
+   */
+  private isTransientNavigationError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    const transientPatterns = [
+      'Execution context was destroyed',
+      'Cannot find context with specified id',
+      'navigation',
+    ];
+
+    return transientPatterns.some((pattern) => error.message.includes(pattern));
+  }
+
+  /**
+   * デバッグ用にスクリーンショットをdebug/フォルダへ保存する
+   * ログだけでは「実際に検索できているか」を判別できないため、画面の実態を確認可能にする
+   * @param page - ページインスタンス
+   * @param prefix - ファイル名のプレフィックス
+   */
+  private async saveDebugScreenshot(page: Page, prefix: string): Promise<void> {
+    try {
+      const debugDir = './debug';
+      if (!fs.existsSync(debugDir)) {
+        fs.mkdirSync(debugDir, { recursive: true });
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const fileName = `${prefix}_${timestamp}.png`;
+      const filePath = path.join(debugDir, fileName);
+
+      await page.screenshot({ path: filePath });
+      console.log(`  💾 デバッグスクリーンショットを保存しました: ${fileName}`);
+    } catch (error) {
+      // スクリーンショット保存に失敗しても本処理には影響させない
+      console.log(
+        `  ⚠️ デバッグスクリーンショットの保存に失敗: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
@@ -138,17 +350,11 @@ export class GmailService {
       // 検索結果が読み込まれるまで待機
       await page.waitForTimeout(2000);
 
-      const count = await page.evaluate(() => {
+      const count = await page.evaluate((selectors: string[]) => {
         // biome-ignore lint/suspicious/noExplicitAny: page.evaluate内ではdocumentが利用可能
         const doc = (globalThis as any).document;
 
         // 複数のセレクタパターンでメール行を探す
-        const selectors = [
-          'tr.zA', // Gmail標準のメール行
-          'div[role="main"] table tbody tr[role="row"]', // メインエリア内のテーブル行
-          'table.F tbody tr', // テーブルF内の行
-        ];
-
         for (const selector of selectors) {
           const rows = doc.querySelectorAll(selector);
           if (rows.length > 0) {
@@ -157,7 +363,7 @@ export class GmailService {
         }
 
         return 0;
-      });
+      }, this.MAIL_ROW_SELECTORS);
 
       console.log(`検索結果: ${count}件のメールが見つかりました`);
       return count;
@@ -192,26 +398,23 @@ export class GmailService {
       await page.waitForTimeout(200);
 
       // N番目のメールをクリック
-      const clicked = await page.evaluate((idx: number) => {
-        // biome-ignore lint/suspicious/noExplicitAny: page.evaluate内ではdocumentが利用可能
-        const doc = (globalThis as any).document;
+      const clicked = await page.evaluate(
+        ({ idx, selectors }: { idx: number; selectors: string[] }) => {
+          // biome-ignore lint/suspicious/noExplicitAny: page.evaluate内ではdocumentが利用可能
+          const doc = (globalThis as any).document;
 
-        const selectors = [
-          'tr.zA',
-          'div[role="main"] table tbody tr[role="row"]',
-          'table.F tbody tr',
-        ];
-
-        for (const selector of selectors) {
-          const rows = doc.querySelectorAll(selector);
-          if (rows.length > idx) {
-            rows[idx].click();
-            return true;
+          for (const selector of selectors) {
+            const rows = doc.querySelectorAll(selector);
+            if (rows.length > idx) {
+              rows[idx].click();
+              return true;
+            }
           }
-        }
 
-        return false;
-      }, index);
+          return false;
+        },
+        { idx: index, selectors: this.MAIL_ROW_SELECTORS }
+      );
 
       if (!clicked) {
         throw new Error(`${index + 1}番目のメールが見つかりませんでした。`);
@@ -231,6 +434,11 @@ export class GmailService {
 
   /**
    * 検索結果一覧に戻る
+   * Escapeキーだけではメール詳細を閉じた後にGmailが受信トレイ（#inbox等）へ
+   * 遷移してしまうことがあり、その場合2件目以降が検索結果ではなく受信トレイ全体に
+   * 対して処理されてしまう（index.tsのskippedCountによるインデックス調整の前提が崩れる）。
+   * そのため、Escape後のURLハッシュが検索結果（#search/...）から外れていた場合のみ、
+   * searchMailsで保持しておいた検索URLへ明示的に復帰する。
    * @param page - ページインスタンス
    */
   async backToSearchResults(page: Page): Promise<void> {
@@ -243,6 +451,29 @@ export class GmailService {
 
       // メールリストが表示されるまで待機
       await page.waitForTimeout(300);
+
+      const currentUrl = page.url();
+      const isOnSearchResults = currentUrl.includes('#search/');
+      console.log(`  現在のURL: ${currentUrl}`);
+
+      if (!isOnSearchResults) {
+        if (!this.lastSearchUrl) {
+          // searchMailsを経由せずbackToSearchResultsが呼ばれた場合は、
+          // 復帰先の検索URLが存在せず正しい状態に戻せないため、フォールバックせず失敗させる
+          throw new Error(
+            '検索結果のURLが保持されていないため復帰できません。先にsearchMailsを実行してください。'
+          );
+        }
+
+        console.log(
+          `  ⚠️ 検索結果コンテキストが外れていました。検索結果URLへ復帰します: ${this.lastSearchUrl}`
+        );
+        await this.navigateToSearchUrl(page, this.lastSearchUrl);
+
+        // 復帰処理を行った後も検索ビューになっていない場合、受信トレイ全体を
+        // 誤って処理してしまう危険があるため明示的に検証する
+        this.assertOnSearchResultsHash(page, '検索結果一覧への復帰');
+      }
 
       console.log('検索結果一覧に戻りました');
     } catch (error) {

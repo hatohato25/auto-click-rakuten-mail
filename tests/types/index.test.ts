@@ -46,7 +46,6 @@ describe('Type Definitions', () => {
     it('Config型のオブジェクトを作成できる', () => {
       const config: Config = {
         email: 'test@example.com',
-        password: 'test-password',
         searchQuery: 'from:rakuten',
         headless: false,
         timeout: 30000,
@@ -59,7 +58,6 @@ describe('Type Definitions', () => {
       };
 
       expect(config.email).toBe('test@example.com');
-      expect(config.password).toBe('test-password');
       expect(config.searchQuery).toBe('from:rakuten');
       expect(config.headless).toBe(false);
       expect(config.timeout).toBe(30000);

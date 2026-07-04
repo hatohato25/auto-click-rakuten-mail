@@ -120,43 +120,6 @@ export class BrowserService {
   }
 
   /**
-   * 指定されたセレクタの要素が表示されるまで待機する
-   * @param page - ページインスタンス
-   * @param selector - CSSセレクタ
-   * @param timeout - タイムアウト時間（ミリ秒）
-   */
-  async waitForSelector(page: Page, selector: string, timeout = 30000): Promise<void> {
-    try {
-      await page.waitForSelector(selector, {
-        state: 'visible',
-        timeout,
-      });
-    } catch (error) {
-      throw new Error(
-        `要素「${selector}」の表示待機がタイムアウトしました: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-
-  /**
-   * 指定されたセレクタの要素をクリックする
-   * @param page - ページインスタンス
-   * @param selector - CSSセレクタ
-   * @param timeout - タイムアウト時間（ミリ秒）
-   */
-  async click(page: Page, selector: string, timeout = 30000): Promise<void> {
-    try {
-      // 要素が表示されるまで待機してからクリック
-      await this.waitForSelector(page, selector, timeout);
-      await page.click(selector);
-    } catch (error) {
-      throw new Error(
-        `要素「${selector}」のクリックに失敗しました: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }
-
-  /**
    * ブラウザを終了する
    * @param browser - ブラウザインスタンス
    */

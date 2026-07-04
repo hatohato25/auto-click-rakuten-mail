@@ -18,6 +18,7 @@ Thumbs.db
 auth.json
 auth.json.base64
 auth.json.backup
+auth.json.base64.backup*
 
 # Build
 dist/

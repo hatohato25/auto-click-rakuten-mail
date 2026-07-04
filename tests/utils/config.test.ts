@@ -18,39 +18,26 @@ describe('loadConfig', () => {
   it('必須の環境変数がすべて設定されている場合、設定オブジェクトを返す', () => {
     // 必須環境変数を設定
     process.env.GMAIL_EMAIL = 'test@example.com';
-    process.env.GMAIL_PASSWORD = 'test-password';
     process.env.RAKUTEN_USER_ID = 'test-rakuten-id';
     process.env.RAKUTEN_PASSWORD = 'test-rakuten-password';
 
     const config = loadConfig();
 
     expect(config.email).toBe('test@example.com');
-    expect(config.password).toBe('test-password');
     expect(config.rakutenUserId).toBe('test-rakuten-id');
     expect(config.rakutenPassword).toBe('test-rakuten-password');
   });
 
   it('GMAIL_EMAILが設定されていない場合、エラーをスローする', () => {
     process.env.GMAIL_EMAIL = undefined;
-    process.env.GMAIL_PASSWORD = 'test-password';
     process.env.RAKUTEN_USER_ID = 'test-rakuten-id';
     process.env.RAKUTEN_PASSWORD = 'test-rakuten-password';
 
     expect(() => loadConfig()).toThrow('環境変数GMAIL_EMAILが設定されていません');
   });
 
-  it('GMAIL_PASSWORDが設定されていない場合、エラーをスローする', () => {
-    process.env.GMAIL_EMAIL = 'test@example.com';
-    process.env.GMAIL_PASSWORD = undefined;
-    process.env.RAKUTEN_USER_ID = 'test-rakuten-id';
-    process.env.RAKUTEN_PASSWORD = 'test-rakuten-password';
-
-    expect(() => loadConfig()).toThrow('環境変数GMAIL_PASSWORDが設定されていません');
-  });
-
   it('RAKUTEN_USER_IDが設定されていない場合、エラーをスローする', () => {
     process.env.GMAIL_EMAIL = 'test@example.com';
-    process.env.GMAIL_PASSWORD = 'test-password';
     process.env.RAKUTEN_USER_ID = undefined;
     process.env.RAKUTEN_PASSWORD = 'test-rakuten-password';
 
@@ -59,7 +46,6 @@ describe('loadConfig', () => {
 
   it('RAKUTEN_PASSWORDが設定されていない場合、エラーをスローする', () => {
     process.env.GMAIL_EMAIL = 'test@example.com';
-    process.env.GMAIL_PASSWORD = 'test-password';
     process.env.RAKUTEN_USER_ID = 'test-rakuten-id';
     process.env.RAKUTEN_PASSWORD = undefined;
 
@@ -68,7 +54,6 @@ describe('loadConfig', () => {
 
   it('SEARCH_QUERYが設定されていない場合、デフォルト値を使用する', () => {
     process.env.GMAIL_EMAIL = 'test@example.com';
-    process.env.GMAIL_PASSWORD = 'test-password';
     process.env.RAKUTEN_USER_ID = 'test-rakuten-id';
     process.env.RAKUTEN_PASSWORD = 'test-rakuten-password';
     process.env.SEARCH_QUERY = undefined;
@@ -80,7 +65,6 @@ describe('loadConfig', () => {
 
   it('SEARCH_QUERYが設定されている場合、その値を使用する', () => {
     process.env.GMAIL_EMAIL = 'test@example.com';
-    process.env.GMAIL_PASSWORD = 'test-password';
     process.env.RAKUTEN_USER_ID = 'test-rakuten-id';
     process.env.RAKUTEN_PASSWORD = 'test-rakuten-password';
     process.env.SEARCH_QUERY = 'from:rakuten is:unread';
@@ -92,7 +76,6 @@ describe('loadConfig', () => {
 
   it('HEADLESSがtrueの場合、headlessがtrueになる', () => {
     process.env.GMAIL_EMAIL = 'test@example.com';
-    process.env.GMAIL_PASSWORD = 'test-password';
     process.env.RAKUTEN_USER_ID = 'test-rakuten-id';
     process.env.RAKUTEN_PASSWORD = 'test-rakuten-password';
     process.env.HEADLESS = 'true';
@@ -104,7 +87,6 @@ describe('loadConfig', () => {
 
   it('HEADLESSがfalseまたは未設定の場合、headlessがfalseになる', () => {
     process.env.GMAIL_EMAIL = 'test@example.com';
-    process.env.GMAIL_PASSWORD = 'test-password';
     process.env.RAKUTEN_USER_ID = 'test-rakuten-id';
     process.env.RAKUTEN_PASSWORD = 'test-rakuten-password';
     process.env.HEADLESS = 'false';
@@ -116,7 +98,6 @@ describe('loadConfig', () => {
 
   it('TIMEOUTが設定されていない場合、デフォルト値30000を使用する', () => {
     process.env.GMAIL_EMAIL = 'test@example.com';
-    process.env.GMAIL_PASSWORD = 'test-password';
     process.env.RAKUTEN_USER_ID = 'test-rakuten-id';
     process.env.RAKUTEN_PASSWORD = 'test-rakuten-password';
     process.env.TIMEOUT = undefined;
@@ -128,7 +109,6 @@ describe('loadConfig', () => {
 
   it('TIMEOUTが設定されている場合、その値を使用する', () => {
     process.env.GMAIL_EMAIL = 'test@example.com';
-    process.env.GMAIL_PASSWORD = 'test-password';
     process.env.RAKUTEN_USER_ID = 'test-rakuten-id';
     process.env.RAKUTEN_PASSWORD = 'test-rakuten-password';
     process.env.TIMEOUT = '60000';
@@ -140,7 +120,6 @@ describe('loadConfig', () => {
 
   it('IMAGE_MATCH_THRESHOLDが設定されていない場合、デフォルト値0.8を使用する', () => {
     process.env.GMAIL_EMAIL = 'test@example.com';
-    process.env.GMAIL_PASSWORD = 'test-password';
     process.env.RAKUTEN_USER_ID = 'test-rakuten-id';
     process.env.RAKUTEN_PASSWORD = 'test-rakuten-password';
     process.env.IMAGE_MATCH_THRESHOLD = undefined;
@@ -152,7 +131,6 @@ describe('loadConfig', () => {
 
   it('IMAGE_MATCH_THRESHOLDが設定されている場合、その値を使用する', () => {
     process.env.GMAIL_EMAIL = 'test@example.com';
-    process.env.GMAIL_PASSWORD = 'test-password';
     process.env.RAKUTEN_USER_ID = 'test-rakuten-id';
     process.env.RAKUTEN_PASSWORD = 'test-rakuten-password';
     process.env.IMAGE_MATCH_THRESHOLD = '0.75';
@@ -164,7 +142,6 @@ describe('loadConfig', () => {
 
   it('PIXEL_MATCH_THRESHOLDが設定されていない場合、デフォルト値0.1を使用する', () => {
     process.env.GMAIL_EMAIL = 'test@example.com';
-    process.env.GMAIL_PASSWORD = 'test-password';
     process.env.RAKUTEN_USER_ID = 'test-rakuten-id';
     process.env.RAKUTEN_PASSWORD = 'test-rakuten-password';
     process.env.PIXEL_MATCH_THRESHOLD = undefined;
@@ -176,7 +153,6 @@ describe('loadConfig', () => {
 
   it('PIXEL_MATCH_THRESHOLDが設定されている場合、その値を使用する', () => {
     process.env.GMAIL_EMAIL = 'test@example.com';
-    process.env.GMAIL_PASSWORD = 'test-password';
     process.env.RAKUTEN_USER_ID = 'test-rakuten-id';
     process.env.RAKUTEN_PASSWORD = 'test-rakuten-password';
     process.env.PIXEL_MATCH_THRESHOLD = '0.15';
@@ -188,7 +164,6 @@ describe('loadConfig', () => {
 
   it('IMAGES_DIRが設定されていない場合、デフォルト値./imagesを使用する', () => {
     process.env.GMAIL_EMAIL = 'test@example.com';
-    process.env.GMAIL_PASSWORD = 'test-password';
     process.env.RAKUTEN_USER_ID = 'test-rakuten-id';
     process.env.RAKUTEN_PASSWORD = 'test-rakuten-password';
     process.env.IMAGES_DIR = undefined;
@@ -200,7 +175,6 @@ describe('loadConfig', () => {
 
   it('IMAGES_DIRが設定されている場合、その値を使用する', () => {
     process.env.GMAIL_EMAIL = 'test@example.com';
-    process.env.GMAIL_PASSWORD = 'test-password';
     process.env.RAKUTEN_USER_ID = 'test-rakuten-id';
     process.env.RAKUTEN_PASSWORD = 'test-rakuten-password';
     process.env.IMAGES_DIR = './custom-images';
@@ -212,7 +186,6 @@ describe('loadConfig', () => {
 
   it('STORAGE_STATE_PATHが設定されていない場合、デフォルト値./auth.jsonを使用する', () => {
     process.env.GMAIL_EMAIL = 'test@example.com';
-    process.env.GMAIL_PASSWORD = 'test-password';
     process.env.RAKUTEN_USER_ID = 'test-rakuten-id';
     process.env.RAKUTEN_PASSWORD = 'test-rakuten-password';
     process.env.STORAGE_STATE_PATH = undefined;
@@ -224,7 +197,6 @@ describe('loadConfig', () => {
 
   it('STORAGE_STATE_PATHが設定されている場合、その値を使用する', () => {
     process.env.GMAIL_EMAIL = 'test@example.com';
-    process.env.GMAIL_PASSWORD = 'test-password';
     process.env.RAKUTEN_USER_ID = 'test-rakuten-id';
     process.env.RAKUTEN_PASSWORD = 'test-rakuten-password';
     process.env.STORAGE_STATE_PATH = './custom-auth.json';
