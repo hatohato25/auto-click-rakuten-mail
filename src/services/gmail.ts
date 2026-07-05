@@ -1,7 +1,7 @@
-import type { Page } from 'playwright';
-import type { BrowserService } from './browser.js';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { Page } from 'playwright';
+import type { BrowserService } from './browser.js';
 
 /**
  * Gmail操作を管理するサービスクラス
@@ -45,10 +45,9 @@ export class GmailService {
         await this.navigateToSearchUrl(page, searchUrl);
       } catch (waitError) {
         // 検索結果・空結果表示のどちらも現れなかった場合、
-        // インタースティシャル等で実際には検索できていない可能性が高いため画面を記録する
-        await this.saveDebugScreenshot(page, 'search_result_timeout');
+        // インタースティシャル等で実際には検索できていない可能性が高い
         throw new Error(
-          `検索結果の描画がタイムアウトしました。ログイン後の案内ページ等が表示されている可能性があります（debug/フォルダのスクリーンショットを確認してください）: ${waitError instanceof Error ? waitError.message : String(waitError)}`
+          `検索結果の描画がタイムアウトしました。ログイン後の案内ページ等が表示されている可能性があります: ${waitError instanceof Error ? waitError.message : String(waitError)}`
         );
       }
 
@@ -60,10 +59,6 @@ export class GmailService {
       // 「検索できたこと」の判定は行の有無でしか行えないため、実際に
       // from:rakuten等の検索結果になっているかをログから目視確認できるようにする
       await this.logSearchResultsPreview(page);
-
-      // 実際に何が描画された状態で検索完了と判定したかを常に記録し、
-      // ログ上「成功」に見えても実態を目視確認できるようにする
-      await this.saveDebugScreenshot(page, 'search_result');
 
       // backToSearchResultsでEscapeキーが検索結果コンテキストを外してしまった場合に
       // 同じ検索へ再度遷移して復帰できるよう、成功した検索URLを保持しておく
@@ -120,13 +115,14 @@ export class GmailService {
   }
 
   /**
-   * 検索結果一覧の先頭数件の内容をログ出力する。
+   * 検索結果一覧の先頭数件の差出人メールアドレスをログ出力する。
    * ログ上「検索が完了しました」と表示されていても、実際には検索結果ではなく
    * 受信トレイの内容だった、という誤判定を目視で確認できるようにするための診断用ログ。
+   * 件名・本文抜粋は個人情報を含むため出力せず、差出人メールアドレスのみを対象とする。
    * @param page - ページインスタンス
    */
   private async logSearchResultsPreview(page: Page): Promise<void> {
-    const previewRows = await page.evaluate((selectors: string[]) => {
+    const previewSenders = await page.evaluate((selectors: string[]) => {
       // biome-ignore lint/suspicious/noExplicitAny: page.evaluate内ではdocumentが利用可能
       const doc = (globalThis as any).document;
 
@@ -135,24 +131,26 @@ export class GmailService {
         if (rows.length > 0) {
           return Array.from(rows)
             .slice(0, 3)
-            .map(
+            .map((row) => {
+              // Gmailのメール行内では差出人要素にemail属性が付与されている
               // biome-ignore lint/suspicious/noExplicitAny: page.evaluate内でのDOM要素の型解決を簡略化するため
-              (row: any) => (row.innerText ?? '').replace(/\s+/g, ' ').trim().slice(0, 80)
-            );
+              const emailElement = (row as any).querySelector('[email]');
+              return emailElement?.getAttribute('email') ?? '(差出人不明)';
+            });
         }
       }
 
       return [];
     }, this.MAIL_ROW_SELECTORS);
 
-    if (previewRows.length === 0) {
+    if (previewSenders.length === 0) {
       console.log('  検索結果プレビュー: 該当するメール行がありません（0件、または空結果表示）');
       return;
     }
 
-    console.log('  検索結果プレビュー（先頭最大3件）:');
-    for (const [idx, text] of previewRows.entries()) {
-      console.log(`    ${idx + 1}. ${text}`);
+    console.log('  検索結果プレビュー（差出人アドレス・先頭最大3件）:');
+    for (const [idx, senderEmail] of previewSenders.entries()) {
+      console.log(`    ${idx + 1}. ${senderEmail}`);
     }
   }
 
@@ -200,7 +198,6 @@ export class GmailService {
       console.log('ログイン状態を検証しています...');
 
       if (!(await this.isLoggedIn(page))) {
-        await this.saveDebugScreenshot(page, 'not_logged_in');
         throw new Error(
           '保存済みセッション（auth.json）が失効しているため、Gmailにログインできていません。' +
             'ローカルで `auth.json` を削除して `HEADLESS=false npm start` を実行し再ログインしてください。' +
@@ -283,7 +280,6 @@ export class GmailService {
       await page.waitForTimeout(3000);
     }
 
-    await this.saveDebugScreenshot(page, 'manual_login_timeout');
     throw new Error(
       `手動ログインの待機がタイムアウトしました（${Math.floor(timeoutMs / 1000)}秒）。ブラウザでログインを完了してから再度実行してください。`
     );
@@ -314,10 +310,16 @@ export class GmailService {
   /**
    * デバッグ用にスクリーンショットをdebug/フォルダへ保存する
    * ログだけでは「実際に検索できているか」を判別できないため、画面の実態を確認可能にする
+   *
+   * 現時点ではどこからも呼び出していない。スクリーンショットには件名等の個人情報が
+   * 写り込む可能性があり常時保存する必要はないため呼び出しを止めたが、
+   * 問題発生時に調査しやすくするため関数自体は残してある。再度必要になった箇所から呼び出すこと。
+   * （現時点では未使用。tscのnoUnusedLocalsは未使用のprivateメンバーを検出するため、
+   * 呼び出しを再追加したときにビルドが壊れないよう、あえてpublicメソッドとして残している）
    * @param page - ページインスタンス
    * @param prefix - ファイル名のプレフィックス
    */
-  private async saveDebugScreenshot(page: Page, prefix: string): Promise<void> {
+  async saveDebugScreenshot(page: Page, prefix: string): Promise<void> {
     try {
       const debugDir = './debug';
       if (!fs.existsSync(debugDir)) {
