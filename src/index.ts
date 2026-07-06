@@ -221,8 +221,13 @@ async function main(): Promise<void> {
     console.log(`削除したメール数: ${deletedCount}`);
     console.log(`未読に戻したメール数: ${markedAsUnreadCount}`);
     console.log('\n--- パフォーマンス統計 ---');
-    console.log(`メールを開く（平均）: ${(totalOpenMailTime / processedCount).toFixed(0)}ms`);
-    console.log(`画像検索（平均）: ${(totalImageSearchTime / processedCount).toFixed(0)}ms`);
+    // processedCountが0（1件も処理成功しなかった）場合に平均計算がNaN/Infinityになるのを防ぐ
+    if (processedCount > 0) {
+      console.log(`メールを開く（平均）: ${(totalOpenMailTime / processedCount).toFixed(0)}ms`);
+      console.log(`画像検索（平均）: ${(totalImageSearchTime / processedCount).toFixed(0)}ms`);
+    } else {
+      console.log('処理に成功したメールがありませんでした（平均処理時間は算出できません）');
+    }
     if (clickedCount > 0) {
       console.log(`リンククリック（平均）: ${(totalClickTime / clickedCount).toFixed(0)}ms`);
     }
@@ -234,9 +239,11 @@ async function main(): Promise<void> {
         `未読に戻す（平均）: ${(totalMarkAsUnreadTime / markedAsUnreadCount).toFixed(0)}ms`
       );
     }
-    console.log(
-      `検索結果一覧に戻る（平均）: ${(totalBackToResultsTime / processedCount).toFixed(0)}ms`
-    );
+    if (processedCount > 0) {
+      console.log(
+        `検索結果一覧に戻る（平均）: ${(totalBackToResultsTime / processedCount).toFixed(0)}ms`
+      );
+    }
     if (totalRakutenLoginTime > 0) {
       console.log(`楽天ログイン（合計）: ${totalRakutenLoginTime.toFixed(0)}ms`);
     }

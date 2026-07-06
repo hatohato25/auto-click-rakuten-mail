@@ -2,9 +2,17 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ImageRecognitionService } from '../../src/services/image.js';
 import fs from 'node:fs';
 import path from 'node:path';
+import { PNG } from 'pngjs';
 
 // fsモジュールをモック化
 vi.mock('node:fs');
+
+// テスト用の正当なPNGバイナリを生成するヘルパー
+// loadTargetImagesがPNG.sync.readでデコード検証するため、ダミー文字列では検証に失敗してしまう
+function createValidPngBuffer(width = 1, height = 1): Buffer {
+  const png = new PNG({ width, height });
+  return PNG.sync.write(png);
+}
 
 describe('ImageRecognitionService', () => {
   let imageService: ImageRecognitionService;
@@ -39,7 +47,7 @@ describe('ImageRecognitionService', () => {
       expect(result).toEqual([]);
     });
 
-    it('PNG画像ファイルのみをフィルタリングして読み込む', async () => {
+    it('PNG画像ファイルのみをフィルタリングして読み込む（拡張子が.png以外は対象外）', async () => {
       const testDir = '/test-images';
       const mockFiles = ['image1.png', 'image2.jpg', 'document.pdf', 'image3.PNG'];
 
@@ -47,56 +55,66 @@ describe('ImageRecognitionService', () => {
       vi.mocked(fs.existsSync).mockReturnValue(true);
       vi.mocked(fs.readdirSync).mockReturnValue(mockFiles as never);
 
-      // ファイル読み込みのモック（各画像に異なるBufferを返す）
-      vi.mocked(fs.readFileSync).mockImplementation((filePath: string | Buffer | URL) => {
-        const filePathStr = filePath.toString();
-        if (filePathStr.includes('image1.png')) {
-          return Buffer.from('image1-data');
-        }
-        if (filePathStr.includes('image2.jpg')) {
-          return Buffer.from('image2-data');
-        }
-        if (filePathStr.includes('image3.PNG')) {
-          return Buffer.from('image3-data');
-        }
-        return Buffer.from('');
-      });
+      // ファイル読み込みのモック（各画像に有効なPNGバイナリを返す）
+      vi.mocked(fs.readFileSync).mockImplementation(() => createValidPngBuffer());
 
       const result = await imageService.loadTargetImages(testDir);
 
-      // PNG, JPG, JPEG ファイル（3個）のみが読み込まれることを確認
-      expect(result).toHaveLength(3);
+      // pixelmatchによる比較はPNGのみ対応のため、.png拡張子のファイル（2個）のみが読み込まれることを確認
+      // .jpgファイルと.pdfファイルは拡張子フィルタの時点で除外される
+      expect(result).toHaveLength(2);
       expect(result[0].path).toBe(path.join(testDir, 'image1.png'));
-      expect(result[1].path).toBe(path.join(testDir, 'image2.jpg'));
-      expect(result[2].path).toBe(path.join(testDir, 'image3.PNG'));
-      expect(result[0].data.toString()).toBe('image1-data');
-      expect(result[1].data.toString()).toBe('image2-data');
-      expect(result[2].data.toString()).toBe('image3-data');
+      expect(result[1].path).toBe(path.join(testDir, 'image3.PNG'));
     });
 
-    it('JPEG画像ファイルを読み込む', async () => {
+    it('PNGとしてデコードできないファイルは警告ログを出して除外される', async () => {
       const testDir = '/test-images';
-      const mockFiles = ['photo1.jpeg', 'photo2.JPEG'];
+      const mockFiles = ['valid.png', 'broken.png'];
 
       vi.mocked(fs.existsSync).mockReturnValue(true);
       vi.mocked(fs.readdirSync).mockReturnValue(mockFiles as never);
 
+      // 拡張子は.pngだが中身がJPEG等、PNGとしてデコードできないケースを再現
       vi.mocked(fs.readFileSync).mockImplementation((filePath: string | Buffer | URL) => {
         const filePathStr = filePath.toString();
-        if (filePathStr.includes('photo1.jpeg')) {
-          return Buffer.from('photo1-data');
+        if (filePathStr.includes('broken.png')) {
+          return Buffer.from('not-a-real-png');
         }
-        if (filePathStr.includes('photo2.JPEG')) {
-          return Buffer.from('photo2-data');
-        }
-        return Buffer.from('');
+        return createValidPngBuffer();
       });
+
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
       const result = await imageService.loadTargetImages(testDir);
 
-      expect(result).toHaveLength(2);
-      expect(result[0].path).toBe(path.join(testDir, 'photo1.jpeg'));
-      expect(result[1].path).toBe(path.join(testDir, 'photo2.JPEG'));
+      // 不正なファイル(broken.png)は除外され、有効なファイル(valid.png)のみが残ることを確認
+      expect(result).toHaveLength(1);
+      expect(result[0].path).toBe(path.join(testDir, 'valid.png'));
+
+      // 除外したファイル名を含む警告ログが出力されることを確認（暗黙に握りつぶさない）
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('broken.png'));
+
+      consoleSpy.mockRestore();
+    });
+
+    it('有効な対象画像が1枚もない場合、その旨をログ出力して空配列を返す', async () => {
+      const testDir = '/test-images';
+      const mockFiles = ['broken.png'];
+
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readdirSync).mockReturnValue(mockFiles as never);
+      vi.mocked(fs.readFileSync).mockReturnValue(Buffer.from('not-a-real-png'));
+
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+      const result = await imageService.loadTargetImages(testDir);
+
+      expect(result).toEqual([]);
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('有効な対象画像が1枚もありませんでした')
+      );
+
+      consoleSpy.mockRestore();
     });
 
     it('ファイル読み込みに失敗した場合、エラーをスローする', async () => {
@@ -123,7 +141,7 @@ describe('ImageRecognitionService', () => {
       vi.mocked(fs.existsSync).mockReturnValue(true);
       vi.mocked(fs.readdirSync).mockReturnValue(mockFiles as never);
 
-      vi.mocked(fs.readFileSync).mockReturnValue(Buffer.from('image-data'));
+      vi.mocked(fs.readFileSync).mockReturnValue(createValidPngBuffer());
 
       const result = await imageService.loadTargetImages(testDir);
 

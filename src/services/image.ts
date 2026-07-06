@@ -25,24 +25,42 @@ export class ImageRecognitionService {
       // ディレクトリ内のファイルを取得
       const files = fs.readdirSync(imagesDir);
 
-      // PNG, JPEG ファイルのみをフィルタリング
-      const imageFiles = files.filter((file) => {
-        const ext = path.extname(file).toLowerCase();
-        return ext === '.png' || ext === '.jpg' || ext === '.jpeg';
-      });
+      // 比較処理（PNG.sync.read + pixelmatch）はPNG画像のみ対応のため、対象は.pngファイルに限定する
+      // 拡張子だけでは中身が別形式（例: JPEGをリネームしたもの）である事故を検知できないため、
+      // このあと実際にPNGとしてデコードできるかを1件ずつ検証する
+      const imageFiles = files.filter((file) => path.extname(file).toLowerCase() === '.png');
 
       if (imageFiles.length === 0) {
         console.log(`⚠️ 画像ディレクトリに画像ファイルが見つかりませんでした: ${imagesDir}`);
         return [];
       }
 
-      // 各画像ファイルを読み込み
-      const images = imageFiles.map((file) => {
+      // 各画像ファイルを読み込み、PNGとしてデコードできるものだけを対象にする
+      // 1枚でもデコードに失敗すると findTargetImage 側で例外が発生し、全メールの画像検索が
+      // 巻き込まれて失敗するため、ここで不正なファイルを弾いて処理を継続できるようにする
+      const images: { path: string; data: Buffer }[] = [];
+      for (const file of imageFiles) {
         const filePath = path.join(imagesDir, file);
         const data = fs.readFileSync(filePath);
+
+        try {
+          PNG.sync.read(data);
+        } catch (error) {
+          console.log(
+            `⚠️ ${file} はPNGとしてデコードできないため対象画像から除外します: ${error instanceof Error ? error.message : String(error)}`
+          );
+          continue;
+        }
+
         console.log(`  - ${file} を読み込みました`);
-        return { path: filePath, data };
-      });
+        images.push({ path: filePath, data });
+      }
+
+      if (images.length === 0) {
+        console.log(
+          `⚠️ 有効な対象画像が1枚もありませんでした（すべてPNGとしてデコードできませんでした）: ${imagesDir}`
+        );
+      }
 
       console.log(`${images.length}個の対象画像を読み込みました`);
       return images;
@@ -76,10 +94,20 @@ export class ImageRecognitionService {
       }
 
       // 対象画像のサイズ情報を事前に取得してキャッシュ（パフォーマンス最適化）
-      const targetImageSizes = targetImages.map((img) => {
-        const png = PNG.sync.read(img.data);
-        return { width: png.width, height: png.height };
-      });
+      // loadTargetImagesで検証済みの画像のみが渡される想定だが、想定外のデータが
+      // 混入していた場合に1枚のデコード失敗で全体の画像検索が失敗しないよう、
+      // 個別にtry-catchしてログを残しつつ除外する
+      const targetImageSizes: { width: number; height: number }[] = [];
+      for (const img of targetImages) {
+        try {
+          const png = PNG.sync.read(img.data);
+          targetImageSizes.push({ width: png.width, height: png.height });
+        } catch (error) {
+          console.log(
+            `⚠️ ${path.basename(img.path)} はPNGとしてデコードできないためサイズ事前チェックから除外します: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      }
 
       // ページ内の全img要素を取得
       const images = await page.$$('img');
